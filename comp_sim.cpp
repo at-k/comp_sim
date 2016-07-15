@@ -50,8 +50,8 @@ bool CheckAdditionalOpt(int i, int argc, char* argv[])
     return true;
 }
 
-size_t Compress(std::istream *input_stream, std::ostream *output_stream, COMP_TYPE type, uint32_t block_size ,
-		ALIGN_TYPE a_type, uint32_t padding_align_size)
+void Compress(std::istream *input_stream, std::ostream *output_stream, COMP_TYPE type, uint32_t block_size ,
+		ALIGN_TYPE a_type, uint32_t padding_align_size, size_t* i_output_size, size_t* i_ttl_pad_size)
 {
 	Compression* cmp_eng = NULL;
 	std::vector<char> input_buf;
@@ -90,15 +90,30 @@ size_t Compress(std::istream *input_stream, std::ostream *output_stream, COMP_TY
 		}
 		cmp_eng->Compress( input_buf.data(), input_buf.size(), output_buf, output_size, &result_size);
 
+		if( result_size > input_buf.size() ) {
+			//printf("hoge %ld, %ld\n", result_size, input_buf.size());
+			result_size = input_buf.size();
+		}
+
 		if( a_type == CAFTL ) {
 			// add padding to aling data size as padding_align_size x N
 			pad_size = (result_size % padding_align_size) == 0 ? 0 : (padding_align_size - result_size % padding_align_size);
+
+			//if( pad_size != 0 ) {
+			//	printf("heke %ld, %ld\n", result_size, pad_size);
+			//}
+
 			result_size += pad_size;
 
 			ttl_size += result_size;
 			ttl_pad_size += pad_size;
 
 		}else if( a_type == PROP ) {
+			pad_size = (result_size % 512) == 0 ? 0 : (512 - result_size % 512);
+
+			result_size += pad_size;
+			ttl_pad_size += pad_size;
+
 			if( buf_size + result_size > padding_align_size ) {
 				pad_size = padding_align_size - buf_size;
 
@@ -114,7 +129,8 @@ size_t Compress(std::istream *input_stream, std::ostream *output_stream, COMP_TY
 	}
 
 	if( a_type == PROP && buf_size != 0 ) {
-		pad_size = padding_align_size - buf_size;
+	//	pad_size = padding_align_size - buf_size;
+		pad_size = 0;
 
 		ttl_size += buf_size + pad_size;
 		ttl_pad_size += pad_size;
@@ -122,7 +138,10 @@ size_t Compress(std::istream *input_stream, std::ostream *output_stream, COMP_TY
 
 	// cmp_eng->Compress(input_stream, output_stream, block_size, &ttl_size);
 
-	return ttl_size;
+	if( i_output_size != NULL )
+		*i_output_size  = ttl_size;
+	if( i_ttl_pad_size != NULL )
+		*i_ttl_pad_size = ttl_pad_size;
 }
 
 int main(int argc, char* argv[])
@@ -160,7 +179,9 @@ int main(int argc, char* argv[])
                 else if( strcmp(argv[i], "--align_mode") == 0 || strcmp(argv[i], "-l") ==0 )
                 {
                     if( !CheckAdditionalOpt(++i, argc, argv) ) { OPT_ERROR;}
-                    else block_size = atoi(argv[i]);
+					else if( *argv[i] == 'c' ) a_mode = CAFTL;
+					else if( *argv[i] == 'p' ) a_mode = PROP;
+
                 }
                 else if( strcmp(argv[i], "--block_size") == 0 || strcmp(argv[i], "-b") ==0 )
                 {
@@ -174,6 +195,34 @@ int main(int argc, char* argv[])
 					else if( *argv[i] == 'z' ) mode = ZLIB;
 					else if( *argv[i] == '2' ) mode = ZIP2;
 					else { OPT_ERROR;}
+                }
+				else if( strcmp(argv[i], "--preset") == 0 || strcmp(argv[i], "-p") ==0 )
+                {
+                    if( !CheckAdditionalOpt(++i, argc, argv) ) { OPT_ERROR;}
+					else if( *argv[i] == '1' ){
+						mode = SNAPPY;
+						a_mode = CAFTL;
+						block_size = 4096 * 4;
+						padding_align_size = 4096;
+					} else if( *argv[i] == '2' ){
+						mode = SNAPPY;
+						a_mode = PROP;
+						block_size = 4096;
+						padding_align_size = 4096 * 16;
+					}
+					else if( *argv[i] == '3' ){
+						mode = ZLIB;
+						a_mode = CAFTL;
+						block_size = 4096 * 4;
+						padding_align_size = 4096;
+					} else if( *argv[i] == '4' ){
+						mode = ZLIB;
+						a_mode = PROP;
+						block_size = 4096;
+						padding_align_size = 4096 * 16;
+					}
+					else { OPT_ERROR;}
+
                 }
 				else if( strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0 )
                 {
@@ -208,12 +257,16 @@ int main(int argc, char* argv[])
 	size_t org_size = (size_t)input_file.seekg(0, std::ios::end).tellg();
 	input_file.seekg(0, std::ios::beg);
 
-	size_t cmp_size = Compress(&input_file, output_stream, mode, block_size, a_mode, padding_align_size );
+	size_t cmp_size = 0;
+	size_t pad_size = 0;
+
+	Compress(&input_file, output_stream, mode, block_size, a_mode, padding_align_size, &cmp_size, &pad_size );
 
 	double cmp_ratio = (double)cmp_size / org_size;
+	double pad_ratio = (double)pad_size / cmp_size;
 
-	printf("mode = %d, bs = %d, align = %d, org size = %ld, cmp size = %ld, cmp_ratio = %.5f\n",
-			mode, block_size, padding_align_size, org_size, cmp_size, cmp_ratio);
+	printf("file_name = %s, algo_type = %d, align_type = %d, bs = %d, align = %d, org size = %ld, cmp size = %ld, cmp_ratio = %.5f, pad_size = %ld, pad_ratio = %.5f\n",
+			in_file_name.c_str(), mode, a_mode, block_size, padding_align_size, org_size, cmp_size, cmp_ratio, pad_size, pad_ratio);
 
 	return 0;
 }
