@@ -6,7 +6,6 @@
 #include <string>
 #include <stdint.h>
 #include <fstream>
-
 #include <vector>
 
 #include "comp.h"
@@ -47,6 +46,7 @@ bool CheckAdditionalOpt(int i, int argc, char* argv[])
         printf("Option Error\nThis option requires an additional argument -- %s\n", argv[i-1]);
         return false;
     }
+
     return true;
 }
 
