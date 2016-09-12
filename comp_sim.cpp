@@ -51,7 +51,7 @@ bool CheckAdditionalOpt(int i, int argc, char* argv[])
 }
 
 void Compress(std::istream *input_stream, std::ostream *output_stream, COMP_TYPE type, uint32_t block_size ,
-		ALIGN_TYPE a_type, uint32_t padding_align_size, size_t* i_output_size, size_t* i_ttl_pad_size)
+		ALIGN_TYPE a_type, uint32_t padding_align_size, size_t* i_output_size, size_t* i_ttl_pad_size, bool trace_flag)
 {
 	Compression* cmp_eng = NULL;
 	std::vector<char> input_buf;
@@ -94,6 +94,9 @@ void Compress(std::istream *input_stream, std::ostream *output_stream, COMP_TYPE
 			//printf("hoge %ld, %ld\n", result_size, input_buf.size());
 			result_size = input_buf.size();
 		}
+
+		if( trace_flag )
+			printf("%ld\n", result_size);
 
 		if( a_type == CAFTL ) {
 			// add padding to aling data size as padding_align_size x N
@@ -150,6 +153,7 @@ int main(int argc, char* argv[])
 	std::string out_file_name = "";
 	COMP_TYPE	mode = SNAPPY;
 	ALIGN_TYPE	a_mode = CAFTL;
+	bool  trace_gen_mode = false;
 
 	uint32_t  block_size          = 8096;
 	uint32_t  padding_align_size  = 4 * block_size;
@@ -224,6 +228,10 @@ int main(int argc, char* argv[])
 					else { OPT_ERROR;}
 
                 }
+				else if( strcmp(argv[i], "--trace_gen") == 0 || strcmp(argv[i], "-t") == 0 )
+				{
+					trace_gen_mode = true;
+				}
 				else if( strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0 )
                 {
                     HowtoUse(argv[0]);
@@ -260,13 +268,20 @@ int main(int argc, char* argv[])
 	size_t cmp_size = 0;
 	size_t pad_size = 0;
 
-	Compress(&input_file, output_stream, mode, block_size, a_mode, padding_align_size, &cmp_size, &pad_size );
+	if( trace_gen_mode ) {
+		printf("file_name = %s, algo_type = %d, bs = %d \n",
+				in_file_name.c_str(), mode, block_size );
+	}
+
+	Compress(&input_file, output_stream, mode, block_size, a_mode, padding_align_size, &cmp_size, &pad_size, trace_gen_mode );
 
 	double cmp_ratio = (double)cmp_size / org_size;
 	double pad_ratio = (double)pad_size / cmp_size;
 
-	printf("file_name = %s, algo_type = %d, align_type = %d, bs = %d, align = %d, org size = %ld, cmp size = %ld, cmp_ratio = %.5f, pad_size = %ld, pad_ratio = %.5f\n",
-			in_file_name.c_str(), mode, a_mode, block_size, padding_align_size, org_size, cmp_size, cmp_ratio, pad_size, pad_ratio);
+	if( !trace_gen_mode ) {
+		printf("file_name = %s, algo_type = %d, align_type = %d, bs = %d, align = %d, org size = %ld, cmp size = %ld, cmp_ratio = %.5f, pad_size = %ld, pad_ratio = %.5f\n",
+				in_file_name.c_str(), mode, a_mode, block_size, padding_align_size, org_size, cmp_size, cmp_ratio, pad_size, pad_ratio);
+	}
 
 	return 0;
 }
